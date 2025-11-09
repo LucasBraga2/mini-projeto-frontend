@@ -1,55 +1,43 @@
 import { config } from '../config';
 
-// Uma função 'helper' para lidar com o logout automático
+// Função helper para deslogar (igual)
 function handleUnauthorized() {
   localStorage.removeItem('token');
-  // Recarrega a página na rota de login.
-  // Isso limpa qualquer estado antigo da aplicação.
   window.location.href = '/login'; 
-  // (Poderíamos usar o 'useNavigate' do router, 
-  // mas o 'window.location' é mais direto e garantido fora de componentes React)
 }
 
 /**
  * Lida com a resposta do fetch.
- * @param response A resposta do fetch
- * @returns O JSON da resposta
+ * AGORA SÓ LIDA COM O CORPO DA RESPOSTA.
  */
 async function handleResponse(response: Response) {
-  // Se o token expirou ou é inválido
-  if (response.status === 401 || response.status === 403) {
-    handleUnauthorized();
-    throw new Error('Sessão expirada. Faça o login novamente.');
-  }
-
+  // Pega a resposta JSON, mesmo se for um erro (para lermos a msg da API)
   const data = await response.json();
 
   if (!response.ok) {
-    // Pega a mensagem de erro da API (ex: "Email já existe")
+    // Se a resposta não for 2xx, joga um erro com a msg da API
     const error = (data && data.error) || response.statusText;
     throw new Error(error);
   }
 
+  // Se for 2xx, retorna os dados
   return data;
 }
 
 /**
- * Nosso 'wrapper' principal do fetch.
+ * Nosso 'wrapper' principal do fetch (COM LÓGICA CORRIGIDA)
  */
 async function apiFetch(endpoint: string, options: RequestInit = {}) {
   const token = localStorage.getItem('token');
   
-  // Headers padrão
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
 
-  // Adiciona o token se ele existir
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Monta as opções finais da requisição
   const fetchOptions: RequestInit = {
     ...options,
     headers: {
@@ -60,27 +48,46 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
 
   try {
     const response = await fetch(`${config.apiBaseUrl}${endpoint}`, fetchOptions);
+
+    // --- ESTA É A NOVA LÓGICA CRÍTICA ---
+    // Verificamos o "Token Expirado" ANTES de lidar com a resposta.
+    // Isso SÓ é disparado se:
+    // 1. O status for 401 (Unauthorized) ou 403 (Forbidden)
+    // 2. Um 'token' JÁ EXISTIA (o usuário estava logado)
+    // 3. Não estamos tentando fazer login (evita loops)
+    if (
+      (response.status === 401 || response.status === 403) &&
+      token && // <- A chave: só desloga se um token foi enviado
+      !endpoint.includes('/login') 
+    ) {
+      handleUnauthorized(); // Desloga e recarrega a página
+      // Joga um erro que será silenciado, pois a página vai recarregar
+      throw new Error('Sessão expirada.');
+    }
+    // --- FIM DA NOVA LÓGICA ---
+
+    // Se não for um erro de token expirado, 
+    // deixamos o handleResponse lidar com a resposta.
+    // Se for um 401 do login (sem token), ele vai cair no 'throw' do handleResponse.
     return handleResponse(response);
+
   } catch (error) {
     console.error('Erro na requisição da API:', error);
-    // Re-lança o erro para o componente poder tratar (ex: mostrar toast)
+    // Re-lança o erro para o AuthContext (que vai mostrar o toast)
     throw error;
   }
 }
 
-// Exporta os métodos HTTP que vamos usar
+// Exporta os métodos (sem mudança aqui)
 export const apiService = {
   get: (endpoint: string) => apiFetch(endpoint, { method: 'GET' }),
-  
   post: (endpoint: string, body: unknown) => apiFetch(endpoint, {
     method: 'POST',
     body: JSON.stringify(body),
   }),
-  
   put: (endpoint: string, body: unknown) => apiFetch(endpoint, {
     method: 'PUT',
     body: JSON.stringify(body),
   }),
-  
   delete: (endpoint: string) => apiFetch(endpoint, { method: 'DELETE' }),
 };
