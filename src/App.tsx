@@ -8,7 +8,6 @@ import ProtectedRoute from './components/ProtectedRoute';
 function App() {
   return (
     <div>
-      {/* Onde os toasts aparecerão */}
       <ToastContainer 
         position="top-right" 
         autoClose={3000} 
@@ -30,7 +29,6 @@ function App() {
         {/* Rotas Protegidas */}
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
-          {/* Adicione outras rotas protegidas aqui */}
         </Route>
         
         {/* Redirecionamento padrão */}
